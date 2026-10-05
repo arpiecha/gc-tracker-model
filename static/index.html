@@ -26,6 +26,8 @@
       --dock-ghost-hover:rgba(15,23,42,0.06);
       --dock-shadow:0 14px 38px rgba(15,23,42,0.26), 0 3px 10px rgba(15,23,42,0.12);
       --dock-sheen:inset 0 1px 0 rgba(255,255,255,0.85);
+      --dock-chip:rgba(13,27,42,0.88); --dock-chip-hi:rgba(13,27,42,0.95);
+      --dock-chip-shadow:0 3px 12px rgba(15,23,42,0.30), inset 0 1px 0 rgba(255,255,255,0.14);
     }
     /* Dark mode follows Telegram's: a desaturated blue-grey rather than navy,
        one soft blue accent instead of electric cyan, and status colours dropped
@@ -40,6 +42,8 @@
       --dock-ghost-hover:rgba(255,255,255,0.07);
       --dock-shadow:0 16px 42px rgba(0,0,0,0.62), 0 3px 10px rgba(0,0,0,0.4);
       --dock-sheen:inset 0 1px 0 rgba(255,255,255,0.08);
+      --dock-chip:rgba(51,144,236,0.86); --dock-chip-hi:rgba(74,159,240,0.94);
+      --dock-chip-shadow:0 3px 14px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.20);
     }
     [data-theme="dark"] .modal-btn-confirm,
     [data-theme="dark"] .tab.active { color: var(--on-accent); }
@@ -127,8 +131,12 @@
     .modal-status.success { background: #D1FAE5; color: #059669; display: block; }
     .modal-status.error { background: #FEE2E2; color: #DC2626; display: block; }
     /* The two ways in sit in a floating frosted bar at the bottom of the
-       screen, within thumb reach, rather than scrolling away with the page. */
+       screen, within thumb reach, rather than scrolling away with the page.
+       The highlight behind the buttons is one chip that slides to whichever
+       one you touch, the way Instagram's tab bar does, instead of a coloured
+       button welded to one side. */
     .dock { position:fixed;left:50%;transform:translateX(-50%);z-index:800;
+            isolation:isolate;
             bottom:calc(14px + env(safe-area-inset-bottom));
             width:min(368px, calc(100% - 64px));
             display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:6px;
@@ -137,20 +145,50 @@
             -webkit-backdrop-filter:blur(34px) saturate(200%);
             backdrop-filter:blur(34px) saturate(200%);
             box-shadow:var(--dock-shadow), var(--dock-sheen); }
-    .dock-btn { display:flex;align-items:center;justify-content:center;gap:9px;
-                padding:13px 10px;border:none;border-radius:999px;cursor:pointer;
+    /* Absolute, so it sits behind the buttons rather than taking a grid cell.
+       Its width is one column: half the bar, less the padding and half the gap. */
+    .dock-pill { position:absolute;z-index:0;top:6px;bottom:6px;left:6px;
+                 width:calc(50% - 9px);border-radius:999px;
+                 background:var(--dock-chip);box-shadow:var(--dock-chip-shadow);
+                 transition:transform 0.44s cubic-bezier(.22,.95,.3,1.06),
+                            background 0.2s ease; }
+    .dock-btn { position:relative;z-index:1;
+                display:flex;align-items:center;justify-content:center;gap:9px;
+                padding:14px 10px;border:none;border-radius:999px;cursor:pointer;
                 font-family:inherit;font-size:14px;font-weight:600;letter-spacing:0.01em;
-                background:none;color:var(--text);transition:background 0.18s, transform 0.12s; }
-    .dock-btn svg { width:21px;height:21px;flex-shrink:0;stroke-width:1.8; }
+                background:none;transition:color 0.22s ease, transform 0.12s; }
+    .dock-btn span { white-space:nowrap; }
+    .dock-btn svg { width:22px;height:22px;flex-shrink:0;stroke-width:1.8;
+                    transition:transform 0.22s cubic-bezier(.22,.95,.3,1.06); }
     .dock-btn:active { transform:scale(0.97); }
-    .dock-btn.primary { background:var(--accent);color:var(--on-accent); }
-    .dock-btn.primary:hover { background:var(--accent-hi); }
-    .dock-btn.ghost:hover { background:var(--dock-ghost-hover); }
+    .dock-btn:active svg { transform:scale(0.9); }
+    .dock-btn.primary { color:var(--on-accent); }
+    .dock-btn.ghost { color:var(--text); }
+    /* Pressing the right-hand button carries the chip, and the colours, over. */
+    .dock:has(.dock-btn.ghost:active) .dock-pill { transform:translateX(calc(100% + 6px)); }
+    .dock:has(.dock-btn.ghost:active) .dock-btn.primary { color:var(--text); }
+    .dock:has(.dock-btn.ghost:active) .dock-btn.ghost { color:var(--on-accent); }
+    @media (hover:hover) {
+      .dock:has(.dock-btn.ghost:hover) .dock-pill { transform:translateX(calc(100% + 6px)); }
+      .dock:has(.dock-btn.ghost:hover) .dock-btn.primary { color:var(--text); }
+      .dock:has(.dock-btn.ghost:hover) .dock-btn.ghost { color:var(--on-accent); }
+      .dock:has(.dock-btn.primary:hover) .dock-pill { background:var(--dock-chip-hi); }
+    }
+    /* Browsers without :has() keep the old solid-primary bar. */
+    @supports not (selector(:has(*))) {
+      .dock-pill { display:none; }
+      .dock-btn.primary { background:var(--accent); }
+      .dock-btn.primary:hover { background:var(--accent-hi); }
+      .dock-btn.ghost:hover { background:var(--dock-ghost-hover); }
+    }
+    @media (prefers-reduced-motion:reduce) {
+      .dock-pill, .dock-btn, .dock-btn svg { transition:none; }
+    }
     /* Nothing should end up hidden behind the bar. */
     .container { padding-bottom:calc(96px + env(safe-area-inset-bottom)); }
     @media (max-width:420px) {
-      .dock-btn { font-size:13px;gap:7px;padding:12px 6px; }
-      .dock-btn svg { width:19px;height:19px; }
+      .dock-btn { font-size:12.5px;gap:7px;padding:13px 4px;letter-spacing:0; }
+      .dock-btn svg { width:20px;height:20px; }
     }
     .upload-status { text-align: center; padding: 10px; font-size: 13px; border-radius: 8px; margin-bottom: 1rem; display: none; }
     .upload-status.success { background: #D1FAE5; color: #059669; }
@@ -572,6 +610,7 @@
     </div>
   <!-- The two ways in, always within thumb reach. -->
   <nav class="dock" id="dock" aria-label="Add a receipt">
+    <div class="dock-pill" aria-hidden="true"></div>
     <button class="dock-btn primary" onclick="document.getElementById('receipt-file-input').click()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <path d="M4.6 8.6h2.5l1.3-2.1h7.2l1.3 2.1h2.5a1.6 1.6 0 0 1 1.6 1.6v6.8a1.6 1.6 0 0 1-1.6 1.6H4.6A1.6 1.6 0 0 1 3 17V10.2a1.6 1.6 0 0 1 1.6-1.6z"/>
