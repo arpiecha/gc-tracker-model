@@ -101,8 +101,19 @@
     .error { padding: 1rem; color: #991B1B; background: #FEE2E2; border-radius: 8px; font-size: 14px; line-height: 1.6; }
     .download-btn { width: 100%; margin-top: 1rem; padding: 10px; font-size: 14px; }
     a { color: #2563EB; }
-    .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center; }
+    /* Modals arrive the way iOS presents one: the page behind dims and goes
+       out of focus while the card springs up to meet you, and leaves a little
+       quicker than it came. The spring is Apple's own sheet curve. */
+    .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+                     background: rgba(0,0,0,0); z-index: 1000; align-items: center; justify-content: center;
+                     -webkit-backdrop-filter: blur(0px); backdrop-filter: blur(0px);
+                     transition: background 0.32s ease, backdrop-filter 0.32s ease,
+                                 -webkit-backdrop-filter 0.32s ease; }
     .modal-overlay.active { display: flex; }
+    .modal-overlay.in { background: rgba(0,0,0,0.42);
+                        -webkit-backdrop-filter: blur(16px) saturate(140%);
+                        backdrop-filter: blur(16px) saturate(140%); }
+    .modal-overlay.out { transition-duration: 0.22s; }
     /* Receipt photo viewer: the photo fills the modal, capped so the actions
        stay on screen on a phone. */
     .photo-modal { display: flex; flex-direction: column; gap: 10px; }
@@ -110,8 +121,34 @@
     .photo-modal-head h2 { margin-bottom: 0; }
     .photo-close { padding: 4px 9px; font-size: 15px; line-height: 1; color: var(--muted); }
     #photo-img { width: 100%; max-height: 60vh; object-fit: contain; border-radius: 8px;
-                 border: 1px solid var(--border); background: var(--hover); }
-    .modal { background: var(--surface); border-radius: 10px; max-width: calc(100vw - 2rem); overflow-x: hidden; padding: 1.5rem; width: 90%; max-width: 480px; max-height: 90vh; overflow-y: auto; }
+                 border: 1px solid var(--border); background: var(--hover);
+                 opacity: 0; transition: opacity 0.35s ease; }
+    #photo-img.loaded { opacity: 1; }
+    /* --zx/--zy/--zs say where the card grows from. Left alone it is a plain
+       scale-up; the photo viewer sets them to the link you tapped, so the
+       photo flies out of the row and falls back into it on the way out. */
+    .modal { background: var(--surface); border-radius: 10px; max-width: calc(100vw - 2rem); overflow-x: hidden; padding: 1.5rem; width: 90%; max-width: 480px; max-height: 90vh; overflow-y: auto;
+             opacity: 0;
+             transform: translate(var(--zx, 0px), var(--zy, 6px)) scale(var(--zs, 0.94));
+             transform-origin: center;
+             transition: transform 0.46s cubic-bezier(.32,.72,0,1), opacity 0.26s ease,
+                         height 0.42s cubic-bezier(.32,.72,0,1); }
+    .modal-overlay.in .modal { opacity: 1; transform: none; }
+    .modal-overlay.out .modal { transition-duration: 0.26s, 0.2s, 0s; opacity: 0; }
+    /* Putting the card at its starting point must not itself animate, or it
+       creeps there from wherever it was left and the zoom never happens. */
+    .modal-overlay.no-anim, .modal-overlay.no-anim .modal { transition: none !important; }
+    /* Swapping the spinner for the form: the card resizes instead of jumping,
+       and the new contents come up behind it. */
+    @keyframes modal-body-in {
+      from { opacity: 0; transform: translateY(7px); }
+      to   { opacity: 1; transform: none; }
+    }
+    .modal-body-in { animation: modal-body-in 0.34s cubic-bezier(.32,.72,0,1) both; }
+    @media (prefers-reduced-motion: reduce) {
+      .modal-overlay, .modal, #photo-img { transition: none; }
+      .modal-body-in { animation: none; }
+    }
     .modal h2 { font-size: 16px; font-weight: 600; margin-bottom: 1rem; }
     .modal-field { margin-bottom: 12px; }
     .modal-field label { font-size: 12px; color: var(--muted); display: block; margin-bottom: 4px; }
@@ -882,13 +919,80 @@
   function openNewClient() {
     $('c-name').value = ''; $('c-address').value = ''; $('c-notes').value = '';
     $('client-status').className = 'modal-status';
-    $('client-modal').classList.add('active');
+    openModal('client-modal');
     $('c-name').focus();
   }
 
+  const REDUCED_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // Show the card, then let the transitions run on the next frame. Pass the
+  // element that was tapped and the card grows out of it instead of out of
+  // the middle of the screen.
+  function openModal(id, origin) {
+    const el = $(id);
+    clearTimeout(el._closeTimer);        // reopening mid-close must not be undone
+    el.classList.remove('out');
+    el.classList.add('no-anim');
+    el.style.removeProperty('--zx');
+    el.style.removeProperty('--zy');
+    el.style.removeProperty('--zs');
+    el.classList.add('active');
+    if (origin && !REDUCED_MOTION) {
+      const card = el.querySelector('.modal');
+      const r = origin.getBoundingClientRect();
+      // offset*, not getBoundingClientRect: the card is already scaled down,
+      // and we want where it will land, not where it sits mid-animation.
+      const cx = card.offsetLeft + card.offsetWidth / 2;
+      const cy = card.offsetTop + card.offsetHeight / 2;
+      el.style.setProperty('--zx', Math.round(r.left + r.width / 2 - cx) + 'px');
+      el.style.setProperty('--zy', Math.round(r.top + r.height / 2 - cy) + 'px');
+      el.style.setProperty('--zs', '0.2');
+    }
+    void el.offsetWidth;                       // commit the starting state
+    requestAnimationFrame(() => {
+      el.classList.remove('no-anim');
+      el.classList.add('in');
+    });
+  }
+
   function closeModal(id) {
-    $(id).classList.remove('active');
-    if (id === 'photo-modal') $('photo-img').removeAttribute('src');   // don't flash the old photo
+    const el = $(id);
+    if (!el.classList.contains('active')) return;
+    el.classList.remove('in');
+    el.classList.add('out');
+    const done = () => {
+      el.classList.remove('active', 'out');
+      el.style.removeProperty('--zx');
+      el.style.removeProperty('--zy');
+      el.style.removeProperty('--zs');
+      if (id === 'photo-modal') {                 // don't flash the old photo
+        $('photo-img').removeAttribute('src');
+        $('photo-img').classList.remove('loaded');
+      }
+    };
+    if (REDUCED_MOTION) done(); else el._closeTimer = setTimeout(done, 280);
+  }
+
+  // Swapping what is inside a modal: let the card resize into its new shape
+  // rather than jumping, and bring the new contents up behind it.
+  function setModalBody(html) {
+    const body = $('modal-body');
+    const card = body.closest('.modal');
+    // Only worth animating when the card is already sitting there. While it is
+    // still arriving, the spring is the animation and a resize fights it.
+    const settled = card.closest('.modal-overlay').classList.contains('in');
+    const from = card.offsetHeight;
+    body.classList.remove('modal-body-in');
+    body.innerHTML = html;
+    if (!settled || REDUCED_MOTION) return;
+    void body.offsetWidth;
+    body.classList.add('modal-body-in');
+    const to = card.offsetHeight;
+    if (Math.abs(to - from) < 2) return;
+    card.style.height = from + 'px';
+    void card.offsetWidth;
+    card.style.height = to + 'px';
+    setTimeout(() => { card.style.height = ''; }, 440);
   }
 
   document.addEventListener('keydown', e => {
@@ -901,13 +1005,17 @@
     return API_BASE + '/receipts/' + id + '/image?key=' + encodeURIComponent(password);
   }
 
-  function openPhoto(id) {
+  function openPhoto(id, origin) {
     const r = allReceipts.find(x => x.id === id);
     const url = photoUrl(id);
+    const img = $('photo-img');
     $('photo-title').textContent = r ? r.store + ' — ' + showDate(r.date) : 'Receipt';
-    $('photo-img').src = url;
+    img.classList.remove('loaded');
+    img.onload = () => img.classList.add('loaded');   // fade in, no blank box
+    img.src = url;
+    if (img.complete) img.classList.add('loaded');
     $('photo-open').href = url;
-    $('photo-modal').classList.add('active');
+    openModal('photo-modal', origin);
   }
 
   async function createClient() {
@@ -1299,7 +1407,7 @@
     const rows = allReceipts.map(r => {
       const isReturn = r.amount < 0;
       const photoLink = r.has_image
-        ? '<a href="#" onclick="openPhoto(' + r.id + ');return false;">view</a>'
+        ? '<a href="#" onclick="openPhoto(' + r.id + ', this);return false;">view</a>'
         : '';
       return '<tr>' +
         '<td style="width:90px">' + esc(showDate(r.date)) + '</td>' +
@@ -1398,8 +1506,8 @@
     this.value = '';
     if (!file) return;
 
-    $('upload-modal').classList.add('active');
-    $('modal-body').innerHTML = '<div class="modal-analyzing"><div class="modal-spinner"></div>Analyzing receipt...</div>';
+    openModal('upload-modal');
+    setModalBody('<div class="modal-analyzing"><div class="modal-spinner"></div>Analyzing receipt...</div>');
     try {
       const dataUrl = await downscale(file);
       currentImageUrl = dataUrl;
@@ -1417,7 +1525,7 @@
   function openManualEntry() {
     currentImageBase64 = null;
     currentImageUrl = null;
-    $('upload-modal').classList.add('active');
+    openModal('upload-modal');
     receiptForm({}, '');
   }
 
@@ -1430,7 +1538,7 @@
     const known = r.category && names.includes(r.category);
     const choices = known || !r.category ? names : names.concat(r.category);
     const cat = known ? r.category : (names.includes('MISC') ? 'MISC' : names[names.length - 1]);
-    $('modal-body').innerHTML =
+    setModalBody(
       (currentImageUrl ? '<img class="modal-preview" src="' + currentImageUrl + '" alt="Receipt">' : '') +
       '<div id="m-status" class="modal-status ' + (warning ? 'error' : '') + '">' + esc(warning) + '</div>' +
       '<div class="modal-field"><label>Store</label><input id="m-store" type="text" value="' + esc(r.store || '') + '"></div>' +
@@ -1448,7 +1556,7 @@
       '<div class="modal-actions">' +
         '<button class="modal-btn modal-btn-cancel" onclick="closeModal(\'upload-modal\')">Cancel</button>' +
         '<button class="modal-btn modal-btn-confirm" id="m-save" onclick="saveReceipt(false)">Save</button>' +
-      '</div>';
+      '</div>');
     if (warning) $('m-status').style.display = 'block';
   }
 
