@@ -430,6 +430,65 @@ def receipt_image(receipt_id: int):
                         headers={"Cache-Control": "private, max-age=3600"})
 
 
+@app.route("/receipts/<int:receipt_id>", methods=["PATCH"])
+def update_receipt(receipt_id: int):
+    """Correct a receipt after the fact. The photo is left alone — this edits
+    what was typed or what Claude read off it, not the picture."""
+    if (err := require_auth()):
+        return err
+    data = request.get_json(silent=True) or {}
+
+    with SessionLocal() as session:
+        receipt = session.get(Receipt, receipt_id)
+        if receipt is None:
+            return jsonify({"error": "Receipt not found"}), 404
+
+        if "store" in data:
+            store = (data.get("store") or "").strip()
+            if not store:
+                return jsonify({"error": "Store is required"}), 400
+            receipt.store = store
+
+        # Type and amount travel together: returns are stored negative so that
+        # summing the column still gives net spend.
+        rtype = receipt.type
+        if "type" in data:
+            rtype = (data.get("type") or "purchase").strip().lower()
+            if rtype not in ("purchase", "return"):
+                rtype = "purchase"
+            receipt.type = rtype
+        if "amount" in data:
+            try:
+                amount = round(float(data.get("amount")), 2)
+            except (TypeError, ValueError):
+                return jsonify({"error": "Amount must be a number"}), 400
+            receipt.amount = -abs(amount) if rtype == "return" else abs(amount)
+        elif "type" in data:
+            current = abs(float(receipt.amount))
+            receipt.amount = -current if rtype == "return" else current
+
+        if "category" in data:
+            cats = get_categories()
+            category = (data.get("category") or "").strip() or (cats[-1] if cats else "MISC")
+            receipt.category = category[:40]
+
+        if "date" in data:
+            raw_date = (data.get("date") or "").strip()
+            try:
+                receipt.date = datetime.strptime(raw_date, "%Y-%m-%d").date()
+            except ValueError:
+                return jsonify({"error": "Date must be YYYY-MM-DD"}), 400
+
+        if "items" in data:
+            receipt.items = (data.get("items") or "").strip() or None
+        if "notes" in data:
+            receipt.notes = (data.get("notes") or "").strip() or None
+
+        session.commit()
+        logger.info("Updated receipt %s", receipt_id)
+        return jsonify({"success": True, "receipt": receipt.to_dict()})
+
+
 @app.route("/receipts/<int:receipt_id>", methods=["DELETE"])
 def delete_receipt(receipt_id: int):
     if (err := require_auth()):

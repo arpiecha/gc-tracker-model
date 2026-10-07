@@ -71,6 +71,19 @@ A draw is money **in**, never an expense: it is never subtracted from a
 category or from Total spent, so what the job cost reads the same either way.
 Turning the switch off only hides it — the draws stay and come back with it.
 
+## Editing a receipt
+
+Every row in the receipt log has a pencil beside its ✕. It opens the same form
+the upload flow confirms into, filled in with what is stored, and saving it
+updates that receipt rather than adding another. The photo is left alone.
+
+Switching a receipt between Purchase and Return flips the sign for you, so the
+totals stay right without retyping the amount.
+
+On a phone the log drops to two lines per receipt — store and amount, then the
+type, date and category — because seven columns cannot fit a phone without
+cutting the amount or the word "purchase" short.
+
 ## Bills due
 
 Each job has a **Bills due** list: a name, the day of the month it's due, and
@@ -134,6 +147,7 @@ POST   /analyze                    photo -> Claude -> receipt fields
 POST   /save                       {client_id, date, store, category, type,
                                     amount, items?, notes?, image_base64?,
                                     source, force?}
+PATCH  /receipts/<id>              correct a saved one; the photo is left as is
 DELETE /receipts/<id>
 GET    /receipts/<id>/image        the photo behind View
 

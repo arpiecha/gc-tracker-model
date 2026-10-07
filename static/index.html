@@ -248,6 +248,36 @@
     @media (max-width: 500px) {
       .col-items { display: none; }
     }
+    /* The meta cell only exists for the phone layout below. */
+    .c-meta { display: none; }
+    /* Seven columns cannot fit a phone without squeezing something to an
+       ellipsis, and Type and Amount are the two that must never lose
+       characters. So below 560px each receipt becomes two lines: store and
+       amount on top, then the type badge, date and category underneath with
+       the photo link and the buttons. Only the store and the category can
+       run out of room, and both are safe to shorten. */
+    @media (max-width: 560px) {
+      .table-wrap { overflow-x: visible; }
+      table { table-layout: auto; }
+      thead { display: none; }
+      table, tbody { display: block; width: 100%; }
+      tr { display: grid; grid-template-columns: minmax(0,1fr) auto auto;
+           grid-template-areas: "store store amount" "meta photo act";
+           align-items: center; column-gap: 10px; row-gap: 4px;
+           padding: 11px 2px; border-bottom: 1px solid var(--border-soft); }
+      tr:last-child { border-bottom: none; }
+      td { display: block; width: auto !important; padding: 0; border: none; }
+      .c-date, .c-cat, .c-type { display: none; }
+      .c-store { grid-area: store; font-size: 14px; font-weight: 600;
+                 min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+      .c-amount { grid-area: amount; font-size: 14px; text-align: right; white-space: nowrap; }
+      .c-meta { grid-area: meta; display: flex; align-items: center; gap: 7px;
+                min-width: 0; font-size: 12px; color: var(--muted); }
+      .c-meta .badge { flex-shrink: 0; }
+      .c-meta-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .col-photo { grid-area: photo; font-size: 12px; }
+      .c-act { grid-area: act; }
+    }
     /* --- additions for multiple jobs --- */
     /* The wordmark from mygctracker.com: Space Grotesk bold with GC in cyan. */
     .brand { font-family:'Space Grotesk','Inter',sans-serif;font-weight:700;font-size:19px;
@@ -384,6 +414,13 @@
     .switch input:focus-visible + .slider { outline:2px solid var(--accent);outline-offset:2px; }
     .row-del { border:none;background:none;color:#94A3B8;cursor:pointer;padding:2px 6px;font-size:14px;font-family:inherit; }
     .row-del:hover { color:#DC2626; }
+    /* Edit sits next to the delete ✕ on each receipt. Icon only. */
+    .c-act { display:flex;align-items:center;justify-content:flex-end;gap:1px; }
+    .row-act { border:none;background:none;color:#94A3B8;cursor:pointer;
+               padding:3px 5px;line-height:0;font-family:inherit;
+               transition:color 0.15s ease; }
+    .row-act:hover { color:var(--accent); }
+    .row-act svg { width:15px;height:15px;stroke-width:1.9;display:block; }
     .table-wrap { overflow-x:auto; }
     .hide { display:none !important; }
   </style>
@@ -697,6 +734,8 @@
   let catChartInstance = null;
   let currentImageBase64 = null;
   let currentImageUrl = null;
+  // Set while the form is correcting an existing receipt rather than adding one.
+  let editingReceiptId = null;
   let timerHandle = null;
 
   const $ = id => document.getElementById(id);
@@ -969,6 +1008,7 @@
         $('photo-img').removeAttribute('src');
         $('photo-img').classList.remove('loaded');
       }
+      if (id === 'upload-modal') editingReceiptId = null;   // abandoned edit
     };
     if (REDUCED_MOTION) done(); else el._closeTimer = setTimeout(done, 280);
   }
@@ -1409,23 +1449,36 @@
       const photoLink = r.has_image
         ? '<a href="#" onclick="openPhoto(' + r.id + ', this);return false;">view</a>'
         : '';
+      const badge = '<span class="badge ' + (isReturn ? 'badge-return' : 'badge-purchase') + '">' + esc(r.type) + '</span>';
       return '<tr>' +
-        '<td style="width:90px">' + esc(showDate(r.date)) + '</td>' +
-        '<td style="width:130px">' + esc(r.store) + '</td>' +
-        '<td style="width:100px">' + esc(r.category) + '</td>' +
-        '<td style="width:70px"><span class="badge ' + (isReturn ? 'badge-return' : 'badge-purchase') + '">' + esc(r.type) + '</span></td>' +
-        '<td style="width:75px" class="' + (isReturn ? 'amount-neg' : 'amount-pos') + '">' + (isReturn ? '-' : '+') + money(r.amount) + '</td>' +
-        '<td class="col-items" style="width:180px;color:var(--muted);font-size:12px;">' + esc(r.items) + '</td>' +
+        '<td class="c-date" style="width:90px">' + esc(showDate(r.date)) + '</td>' +
+        '<td class="c-store" style="width:130px">' + esc(r.store) + '</td>' +
+        '<td class="c-cat" style="width:100px">' + esc(r.category) + '</td>' +
+        '<td class="c-type" style="width:80px">' + badge + '</td>' +
+        '<td class="c-amount ' + (isReturn ? 'amount-neg' : 'amount-pos') + '" style="width:85px">' + (isReturn ? '-' : '+') + money(r.amount) + '</td>' +
+        '<td class="col-items" style="width:170px;color:var(--muted);font-size:12px;">' + esc(r.items) + '</td>' +
+        // Date, category and type collapse into this one line on a phone, with
+        // the badge first so the word is never the thing that gets clipped.
+        '<td class="c-meta">' + badge + '<span class="c-meta-text">' + esc(showDate(r.date)) +
+          (r.category ? ' · ' + esc(r.category) : '') + '</span></td>' +
         '<td class="col-photo" style="width:50px">' + photoLink + '</td>' +
-        '<td style="width:40px"><button class="row-del" title="Delete receipt" onclick="deleteReceipt(' + r.id + ')">✕</button></td>' +
+        '<td class="c-act" style="width:64px">' +
+          '<button class="row-act" title="Edit receipt" aria-label="Edit receipt" onclick="editReceipt(' + r.id + ')">' +
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+            '<path d="M15.5 4.3a2 2 0 0 1 2.8 0l1.4 1.4a2 2 0 0 1 0 2.8L9.4 18.8l-4.2 1.4 1.4-4.2z"/>' +
+            '<path d="M14.1 5.7 18.3 9.9"/></svg>' +
+          '</button>' +
+          '<button class="row-del" title="Delete receipt" aria-label="Delete receipt" onclick="deleteReceipt(' + r.id + ')">✕</button>' +
+        '</td>' +
         '</tr>';
     }).join('');
 
     $('table-container').innerHTML = '<div class="table-wrap"><table><thead><tr>' +
-      '<th style="width:90px">Date</th><th style="width:130px">Store</th>' +
-      '<th style="width:100px">Category</th><th style="width:70px">Type</th>' +
-      '<th style="width:75px">Amount</th><th class="col-items" style="width:180px">Items</th>' +
-      '<th class="col-photo" style="width:50px">Photo</th><th style="width:40px"></th>' +
+      '<th class="c-date" style="width:90px">Date</th><th class="c-store" style="width:130px">Store</th>' +
+      '<th class="c-cat" style="width:100px">Category</th><th class="c-type" style="width:80px">Type</th>' +
+      '<th class="c-amount" style="width:85px">Amount</th><th class="col-items" style="width:170px">Items</th>' +
+      '<th class="c-meta"></th>' +
+      '<th class="col-photo" style="width:50px">Photo</th><th class="c-act" style="width:64px"></th>' +
       '</tr></thead><tbody>' + rows + '</tbody></table></div>';
   }
 
@@ -1506,6 +1559,8 @@
     this.value = '';
     if (!file) return;
 
+    editingReceiptId = null;
+    setModalTitle('📸 Upload Receipt');
     openModal('upload-modal');
     setModalBody('<div class="modal-analyzing"><div class="modal-spinner"></div>Analyzing receipt...</div>');
     try {
@@ -1523,10 +1578,37 @@
   });
 
   function openManualEntry() {
+    editingReceiptId = null;
     currentImageBase64 = null;
     currentImageUrl = null;
+    setModalTitle('✎ Manual Entry');
     openModal('upload-modal');
     receiptForm({}, '');
+  }
+
+  function setModalTitle(text) {
+    document.querySelector('#upload-modal h2').textContent = text;
+  }
+
+  // Edit opens the same form the upload flow confirms into, filled in with
+  // what is already stored. The photo is left as it is.
+  function editReceipt(id) {
+    const r = allReceipts.find(x => x.id === id);
+    if (!r) return;
+    editingReceiptId = id;
+    currentImageBase64 = null;                       // not re-uploading a photo
+    currentImageUrl = r.has_image ? photoUrl(id) : null;
+    setModalTitle('✎ Edit Receipt');
+    openModal('upload-modal');
+    receiptForm({
+      store: r.store,
+      total: Math.abs(r.amount),
+      date: r.date,
+      category: r.category,
+      type: r.type,
+      items: r.items,
+      notes: r.notes
+    }, '');
   }
 
   function receiptForm(r, warning) {
@@ -1573,18 +1655,28 @@
     if (isNaN(amount)) return fail('Amount is required');
 
     btn.disabled = true; btn.textContent = 'Saving...';
+    const fields = {
+      date: $('m-date').value || today(),
+      store, category: $('m-category').value, type: $('m-type').value, amount,
+      items: $('m-items').value.trim(), notes: $('m-notes').value.trim()
+    };
     try {
-      const r = await api('/save', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          client_id: currentClientId(),
-          date: $('m-date').value || today(),
-          store, category: $('m-category').value, type: $('m-type').value, amount,
-          items: $('m-items').value.trim(), notes: $('m-notes').value.trim(),
-          image_base64: currentImageBase64, source: 'dashboard', force: !!force
-        })
-      });
+      // Correcting one that already exists, or filing a new one. An edit is a
+      // deliberate change, so it skips the duplicate check.
+      const r = editingReceiptId
+        ? await api('/receipts/' + editingReceiptId, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(fields)
+          })
+        : await api('/save', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(Object.assign({
+              client_id: currentClientId(),
+              image_base64: currentImageBase64, source: 'dashboard', force: !!force
+            }, fields))
+          });
       const data = await r.json();
 
       if (data.duplicate) {
@@ -1602,6 +1694,7 @@
       if (!data.success) return fail(data.error || 'Could not save');
 
       closeModal('upload-modal');
+      editingReceiptId = null;
       currentImageBase64 = null; currentImageUrl = null;
       await loadClients();
     } catch (e) {
