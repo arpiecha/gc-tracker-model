@@ -189,11 +189,13 @@
                  background:var(--dock-chip);box-shadow:var(--dock-chip-shadow);
                  transition:transform 0.44s cubic-bezier(.22,.95,.3,1.06),
                             background 0.2s ease; }
-    /* Off screen rather than display:none: Safari refuses to open a file input
-       that is not in the layout, which is what made Upload Receipt need two
-       taps. */
-    .visually-hidden { position:absolute;width:1px;height:1px;padding:0;margin:-1px;
-                       overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0; }
+    /* The file input lies on top of Upload Receipt at full size and invisible,
+       so the thing being tapped IS the input. Safari opens the picker on that
+       first tap; a hidden input opened by script or by a label did not. */
+    .dock-upload { position:relative; }
+    .dock-file { position:absolute;top:0;left:0;width:100%;height:100%;
+                 opacity:0;z-index:2;cursor:pointer;font-size:0;
+                 -webkit-appearance:none;appearance:none;border:0;padding:0; }
     .dock-btn { position:relative;z-index:1;
                 display:flex;align-items:center;justify-content:center;gap:9px;
                 padding:14px 10px;border:none;border-radius:999px;cursor:pointer;
@@ -529,7 +531,6 @@
     </div>
 
     <div id="dash" class="hide">
-    <input type="file" id="receipt-file-input" accept="image/*" class="visually-hidden">
 
     <div class="tabs">
       <button class="tab active" onclick="switchTab('overview')">📊 Overview</button>
@@ -690,12 +691,14 @@
   <!-- The two ways in, always within thumb reach. -->
   <nav class="dock" id="dock" aria-label="Add a receipt">
     <div class="dock-pill" aria-hidden="true"></div>
-    <label class="dock-btn primary" for="receipt-file-input" role="button" tabindex="0">
+    <div class="dock-btn primary dock-upload">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <path d="M4.6 8.6h2.5l1.3-2.1h7.2l1.3 2.1h2.5a1.6 1.6 0 0 1 1.6 1.6v6.8a1.6 1.6 0 0 1-1.6 1.6H4.6A1.6 1.6 0 0 1 3 17V10.2a1.6 1.6 0 0 1 1.6-1.6z"/>
         <circle cx="12" cy="13.4" r="3.3"/>
       </svg><span>Upload Receipt</span>
-    </label>
+      <input type="file" id="receipt-file-input" accept="image/*"
+             class="dock-file" aria-label="Upload receipt">
+    </div>
     <button class="dock-btn ghost" onclick="openManualEntry()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <path d="M15.5 4.3a2 2 0 0 1 2.8 0l1.4 1.4a2 2 0 0 1 0 2.8L9.4 18.8l-4.2 1.4 1.4-4.2z"/>
@@ -1579,15 +1582,6 @@
       receiptForm(data.success ? (data.receipt || {}) : {}, data.success ? '' : (data.error || 'Could not read it — fill it in below.'));
     } catch (e) {
       receiptForm({}, e.message || 'Could not read it — fill it in below.');
-    }
-  });
-
-  // The upload control is a <label> so iOS opens the picker on the first tap.
-  // That costs it keyboard activation, so put Enter and Space back.
-  document.querySelector('.dock-btn.primary').addEventListener('keydown', e => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      $('receipt-file-input').click();
     }
   });
 
